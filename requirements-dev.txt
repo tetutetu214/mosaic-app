@@ -1,0 +1,7 @@
+pytest
+pytest-mock
+python-dotenv
+boto3
+moto  # AWSサービスのモック
+line-bot-sdk
+pillow

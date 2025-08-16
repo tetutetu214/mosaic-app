@@ -1,0 +1,4 @@
+boto3
+pillow
+python-dotenv
+line-bot-sdk
