@@ -13,6 +13,7 @@ from collection_manager import search_known_faces
 
 
 def process_image_message(line_event: Dict[str, Any], settings: Dict[str, Any]) -> None:
+    """画像メッセージ処理の完全実装（セキュア版）"""
     user_id = line_event.get("source", {}).get("userId", "unknown")
     
     # 登録モードかチェック
@@ -20,7 +21,7 @@ def process_image_message(line_event: Dict[str, Any], settings: Dict[str, Any]) 
     if is_registration_mode(user_id):
         process_face_registration(line_event, settings, user_id)
         return
-    """画像メッセージ処理の完全実装（セキュア版）"""
+    
     message_id = line_event['message']['id']
     reply_token = line_event['replyToken']
     
@@ -47,9 +48,11 @@ def process_image_message(line_event: Dict[str, Any], settings: Dict[str, Any]) 
                 image_key, 
                 settings['rekognition_collection_id']
             )
+            print(f"DEBUG: search_known_faces called with bucket={settings['s3_bucket_name']}, key={image_key}, collection={settings['rekognition_collection_id']}")
             # 登録済み顔との照合ロジック
             from face_matcher import filter_known_faces
-            faces_to_mosaic = filter_known_faces(faces, known_faces)
+            from face_matcher import filter_known_faces
+            faces_to_mosaic = filter_known_faces(faces, settings["s3_bucket_name"], image_key, settings["rekognition_collection_id"])
         else:
             # 全ての顔にモザイク
             faces_to_mosaic = faces
