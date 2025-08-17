@@ -18,7 +18,7 @@ def search_known_faces(bucket: str, key: str, collection_id: str) -> List[Dict[s
                     'Name': key
                 }
             },
-            FaceMatchThreshold=0.5,
+            FaceMatchThreshold=0.0,
             MaxFaces=3
         )
         

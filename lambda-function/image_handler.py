@@ -1,5 +1,5 @@
 """
-画像処理ハンドラー（セキュア版）
+画像処理ハンドラー（顔数制限対応）
 """
 import boto3
 import requests
@@ -9,11 +9,10 @@ import uuid
 from typing import Dict, Any
 
 from mosaic_processor import detect_faces, apply_mosaic
-from collection_manager import search_known_faces
 
 
 def process_image_message(line_event: Dict[str, Any], settings: Dict[str, Any]) -> None:
-    """画像メッセージ処理の完全実装（セキュア版）"""
+    """画像メッセージ処理（顔数制限対応）"""
     user_id = line_event.get("source", {}).get("userId", "unknown")
     
     # 登録モードかチェック
@@ -40,19 +39,23 @@ def process_image_message(line_event: Dict[str, Any], settings: Dict[str, Any]) 
             send_line_reply(reply_token, "顔が検出されませんでした。", settings)
             return
         
-        # 4. モザイク処理（モードに応じて）
+        # 4. モザイク処理（顔数制限対応）
         if settings['mosaic_mode'] == 'exclude':
-            # 登録済み顔を除外
-            known_faces = search_known_faces(
-                settings['s3_bucket_name'], 
-                image_key, 
-                settings['rekognition_collection_id']
+            # 顔数制限付きの登録済み顔除外
+            from face_matcher import filter_known_faces_with_limit
+            
+            # PIL画像オブジェクト作成
+            original_image = Image.open(io.BytesIO(image_data))
+            
+            faces_to_mosaic = filter_known_faces_with_limit(
+                faces, 
+                original_image,
+                settings["s3_bucket_name"], 
+                f"faces/{uuid.uuid4()}",  # 一意なプレフィックス
+                settings["rekognition_collection_id"],
+                face_limit=5,
+                similarity_threshold=50.0  # 70.0から50.0に変更
             )
-            print(f"DEBUG: search_known_faces called with bucket={settings['s3_bucket_name']}, key={image_key}, collection={settings['rekognition_collection_id']}")
-            # 登録済み顔との照合ロジック
-            from face_matcher import filter_known_faces
-            from face_matcher import filter_known_faces
-            faces_to_mosaic = filter_known_faces(faces, settings["s3_bucket_name"], image_key, settings["rekognition_collection_id"])
         else:
             # 全ての顔にモザイク
             faces_to_mosaic = faces
