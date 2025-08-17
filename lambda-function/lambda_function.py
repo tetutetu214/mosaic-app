@@ -49,7 +49,10 @@ def process_line_webhook(event: Dict[str, Any], settings: Dict[str, Any]) -> Dic
         for line_event in body.get('events', []):
             if line_event.get('type') == 'message':
                 message = line_event.get('message', {})
-                if message.get('type') == 'image':
+                if message.get('type') == 'text':
+                    # テキストメッセージ処理
+                    process_text_message(line_event, settings)
+                elif message.get('type') == 'image':
                     # 画像メッセージ処理
                     process_image_message(line_event, settings)
         
@@ -70,3 +73,9 @@ def process_image_message(line_event: Dict[str, Any], settings: Dict[str, Any]) 
     """画像メッセージ処理"""
     from image_handler import process_image_message as handle_image
     handle_image(line_event, settings)
+
+
+def process_text_message(line_event: Dict[str, Any], settings: Dict[str, Any]) -> None:
+    """テキストメッセージ処理"""
+    from text_handler import process_text_message as handle_text
+    handle_text(line_event, settings)

@@ -13,6 +13,13 @@ from collection_manager import search_known_faces
 
 
 def process_image_message(line_event: Dict[str, Any], settings: Dict[str, Any]) -> None:
+    user_id = line_event.get("source", {}).get("userId", "unknown")
+    
+    # 登録モードかチェック
+    from registration_state import is_registration_mode, clear_registration_mode
+    if is_registration_mode(user_id):
+        process_face_registration(line_event, settings, user_id)
+        return
     """画像メッセージ処理の完全実装（セキュア版）"""
     message_id = line_event['message']['id']
     reply_token = line_event['replyToken']
@@ -40,8 +47,9 @@ def process_image_message(line_event: Dict[str, Any], settings: Dict[str, Any]) 
                 image_key, 
                 settings['rekognition_collection_id']
             )
-            # TODO: 登録済み顔との照合ロジック
-            faces_to_mosaic = faces  # 現在は全ての顔
+            # 登録済み顔との照合ロジック
+            from face_matcher import filter_known_faces
+            faces_to_mosaic = filter_known_faces(faces, known_faces)
         else:
             # 全ての顔にモザイク
             faces_to_mosaic = faces
@@ -156,3 +164,50 @@ def send_secure_image_reply(reply_token: str, bucket: str, key: str, settings: D
         headers=headers,
         json=data
     )
+
+
+def process_face_registration(line_event: Dict[str, Any], settings: Dict[str, Any], user_id: str) -> None:
+    """顔登録処理"""
+    message_id = line_event['message']['id']
+    reply_token = line_event['replyToken']
+    
+    try:
+        # 1. LINE APIから画像ダウンロード
+        image_data = download_image_from_line(message_id, settings)
+        
+        # 2. S3にアップロード
+        image_key = f"registration/{user_id}_{uuid.uuid4()}.jpg"
+        upload_to_s3(image_data, image_key, settings['s3_bucket_name'])
+        
+        # 3. 顔検出
+        faces = detect_faces(settings['s3_bucket_name'], image_key)
+        
+        if not faces:
+            send_line_reply(reply_token, "顔が検出されませんでした。別の画像で再度お試しください。", settings)
+            return
+        
+        if len(faces) > 1:
+            send_line_reply(reply_token, "複数の顔が検出されました。1つの顔のみが写った画像を送信してください。", settings)
+            return
+        
+        # 4. 顔をコレクションに登録
+        from collection_manager import add_face_to_collection
+        face_id = add_face_to_collection(
+            settings['s3_bucket_name'], 
+            image_key, 
+            settings['rekognition_collection_id']
+        )
+        
+        # 5. 登録モード解除
+        from registration_state import clear_registration_mode
+        clear_registration_mode(user_id)
+        
+        send_line_reply(reply_token, f"顔登録が完了しました。\n登録ID: {face_id[:8]}...", settings)
+        
+    except Exception as e:
+        print(f"Error in face registration: {str(e)}")
+        send_line_reply(reply_token, "顔登録中にエラーが発生しました。", settings)
+        
+        # エラー時も登録モード解除
+        from registration_state import clear_registration_mode
+        clear_registration_mode(user_id)
