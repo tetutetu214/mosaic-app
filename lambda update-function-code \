@@ -1,0 +1,44 @@
+{
+    "FunctionName": "mosaic-app",
+    "FunctionArn": "arn:aws:lambda:us-east-1:522436770652:function:mosaic-app",
+    "Role": "arn:aws:iam::522436770652:role/lambda-execution-role",
+    "CodeSize": 0,
+    "Description": "",
+    "Timeout": 30,
+    "MemorySize": 512,
+    "LastModified": "2025-08-17T06:30:00.000+0000",
+    "CodeSha256": "f84ecd1d529585b83c1783477a531f770bf4a60a5270a7f36e4995fb0a7d4c8f",
+    "Version": "$LATEST",
+    "Environment": {
+        "Variables": {
+            "LINE_CHANNEL_SECRET": "2064795064e8b97ddab3dc103bbc656f",
+            "MOSAIC_MODE": "exclude",
+            "REKOGNITION_COLLECTION_ID": "mosaic-app-faces",
+            "S3_BUCKET_NAME": "mosaic-app-images-1755311599",
+            "LINE_CHANNEL_ACCESS_TOKEN": "fwZ01ruxReL6OFZ8CRqfXlkLDgL6jULfDavHCbb2CFI7Knh0LuAREQCuEOPX9bp9sP82z4D4YnOKVLJ5QfRgVEfaJEwxp/Wq8jD6s2sCz/Ls8gGCpZ5kNKJ/35AqFmI3q5W09vzmcXzDLx2sNb+ZtgdB04t89/1O/w1cDnyilFU="
+        }
+    },
+    "TracingConfig": {
+        "Mode": "PassThrough"
+    },
+    "RevisionId": "cfddbc9b-3e43-4677-a071-54238cccc824",
+    "State": "Active",
+    "LastUpdateStatus": "InProgress",
+    "LastUpdateStatusReason": "The function is being created.",
+    "LastUpdateStatusReasonCode": "Creating",
+    "PackageType": "Image",
+    "Architectures": [
+        "x86_64"
+    ],
+    "EphemeralStorage": {
+        "Size": 512
+    },
+    "SnapStart": {
+        "ApplyOn": "None",
+        "OptimizationStatus": "Off"
+    },
+    "LoggingConfig": {
+        "LogFormat": "Text",
+        "LogGroup": "/aws/lambda/mosaic-app"
+    }
+}

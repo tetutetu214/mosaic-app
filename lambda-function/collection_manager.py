@@ -5,33 +5,8 @@ import boto3
 from typing import List, Dict, Any, Optional
 
 
-def search_face_in_collection(bucket: str, key: str, collection_id: str, face_bbox: Dict[str, float]) -> List[Dict[str, Any]]:
-    """指定された顔領域で登録済み顔を検索"""
-    rekognition = boto3.client('rekognition')
-    
-    try:
-        # 顔領域を指定して検索
-        response = rekognition.search_faces_by_image(
-            CollectionId=collection_id,
-            Image={
-                'S3Object': {
-                    'Bucket': bucket,
-                    'Name': key
-                }
-            },
-            FaceMatchThreshold=50.0,  # 閾値を下げる
-            MaxFaces=10
-        )
-        
-        print(f"DEBUG: Individual face search response: {response}")
-        return response.get('FaceMatches', [])
-    except Exception as e:
-        print(f"DEBUG: Face search failed: {str(e)}")
-        return []
-
-
 def search_known_faces(bucket: str, key: str, collection_id: str) -> List[Dict[str, Any]]:
-    """登録済み顔の検索（後方互換性のため残存）"""
+    """登録済み顔の検索"""
     rekognition = boto3.client('rekognition')
     
     try:
@@ -43,12 +18,27 @@ def search_known_faces(bucket: str, key: str, collection_id: str) -> List[Dict[s
                     'Name': key
                 }
             },
-            FaceMatchThreshold=50.0,
-            MaxFaces=10
+            FaceMatchThreshold=0.5,
+            MaxFaces=3
         )
         
-        return response.get('FaceMatches', [])
+        matches = response.get('FaceMatches', [])
+        
+        # 類似度を全部ログ出力
+        print(f"=== Face Recognition Results ===")
+        print(f"Total matches found: {len(matches)}")
+        for i, match in enumerate(matches):
+            similarity = match.get('Similarity', 0)
+            face_id = match.get('Face', {}).get('FaceId', 'unknown')
+            print(f"Match {i+1}: FaceID={face_id}, Similarity={similarity:.2f}%")
+        
+        if not matches:
+            print("No matching faces found in collection")
+        
+        return matches
+        
     except rekognition.exceptions.InvalidParameterException:
+        print("InvalidParameterException: No faces detected in image or collection not found")
         return []
 
 
