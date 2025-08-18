@@ -53,7 +53,7 @@ def process_image_message(line_event: Dict[str, Any], settings: Dict[str, Any]) 
                 settings["s3_bucket_name"], 
                 f"faces/{uuid.uuid4()}",  # 一意なプレフィックス
                 settings["rekognition_collection_id"],
-                face_limit=5,
+                face_limit=20,
                 similarity_threshold=50.0  # 70.0から50.0に変更
             )
         else:
