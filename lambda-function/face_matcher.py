@@ -57,24 +57,15 @@ def filter_faces_individually(
     bucket: str, 
     key_prefix: str,
     collection_id: str,
-    similarity_threshold: float = 50.0  # 70.0から50.0に変更
+    similarity_threshold: float = 50.0
 ) -> List[Dict[str, Any]]:
     """
     各顔を個別に照合して登録済み顔を除外
-    
-    Args:
-        detected_faces: 検出された全ての顔
-        original_image: 元画像
-        bucket: S3バケット名
-        key_prefix: S3キーのプレフィックス
-        collection_id: RekognitionコレクションID
-        similarity_threshold: 一致判定の閾値
-    
-    Returns:
-        モザイク対象の顔リスト
     """
     from collection_manager import search_known_faces
     from image_handler import upload_to_s3
+    
+    print(f"DEBUG: Starting individual face processing for {len(detected_faces)} faces")
     
     # 全ての顔をクロップ
     cropped_faces = crop_all_faces(original_image, detected_faces)
@@ -85,15 +76,20 @@ def filter_faces_individually(
     best_similarity = 0.0
     
     # 各顔を個別に照合
-    for cropped_face, original_index in cropped_faces:
+    for i, (cropped_face, original_index) in enumerate(cropped_faces):
         try:
+            print(f"DEBUG: Processing face {i+1}/{len(cropped_faces)}")
+            
             # 顔画像をS3にアップロード
             face_key = f"{key_prefix}/face_{original_index}_{uuid.uuid4()}.jpg"
             face_bytes = face_image_to_bytes(cropped_face)
+            print(f"DEBUG: Uploading face {i+1} to S3")
             upload_to_s3(face_bytes, face_key, bucket)
             
             # 個別照合
+            print(f"DEBUG: Searching face {i+1} in collection")
             matches = search_known_faces(bucket, face_key, collection_id)
+            print(f"DEBUG: Face {i+1} search completed")
             
             if matches:
                 # 最高類似度を取得
@@ -108,7 +104,12 @@ def filter_faces_individually(
                 print(f"DEBUG: Face {original_index} no matches found")
                 
         except Exception as e:
-            print(f"DEBUG: Error processing face {original_index}: {str(e)}")
+            print(f"ERROR: Failed processing face {i+1}: {str(e)}")
+            import traceback
+            print(f"ERROR traceback: {traceback.format_exc()}")
+            continue
+    
+    print(f"DEBUG: Individual processing completed")
     
     # 結果判定
     if best_match_index >= 0 and best_similarity >= similarity_threshold:
@@ -126,7 +127,6 @@ def filter_faces_individually(
     
     print(f"DEBUG: {len(faces_to_mosaic)} faces will be mosaicked")
     return faces_to_mosaic
-
 
 def filter_known_faces(detected_faces: List[Dict[str, Any]], bucket: str, key: str, collection_id: str, similarity_threshold: float = 50.0) -> List[Dict[str, Any]]:
     """
