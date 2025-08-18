@@ -124,10 +124,11 @@ lambda-function/mosaic_processor.pyのmosaic_strengthを変更:
 - 大きい値: 強いモザイク（デフォルト: 20）
 
 ### モザイクモード
+環境変数 MOSAIC_MODE で変更:
 - all: 全ての顔にモザイク
 - exclude: 登録済み顔を除外（顔数制限付き）
 
 ### 顔認識設定
-- 類似度閾値: 50%（50%以上でユーザー認識）
-- 顔数制限: 20人（20人以下で個別照合、21人以上で全員モザイク）
-- AWS Rekognition閾値: 0.0%（全ての類似度データを取得）
+- 類似度閾値: 50%（lambda-function/image_handler.py で変更）
+- 顔数制限: 20人（lambda-function/image_handler.py で変更）
+- AWS Rekognition閾値: 0.0%（lambda-function/collection_manager.py で変更）
