@@ -152,3 +152,4 @@ def filter_known_faces(detected_faces: List[Dict[str, Any]], bucket: str, key: s
     else:
         print("DEBUG: No high-similarity matches, returning all detected faces")
         return detected_faces
+
