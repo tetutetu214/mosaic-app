@@ -72,59 +72,54 @@ def filter_faces_individually(
     print(f"DEBUG: Successfully cropped {len(cropped_faces)} faces")
     
     faces_to_mosaic = []
-    best_match_index = -1
-    best_similarity = 0.0
-    
+    matched_indices = set()
+
     # 各顔を個別に照合
     for i, (cropped_face, original_index) in enumerate(cropped_faces):
         try:
             print(f"DEBUG: Processing face {i+1}/{len(cropped_faces)}")
-            
+
             # 顔画像をS3にアップロード
             face_key = f"{key_prefix}/face_{original_index}_{uuid.uuid4()}.jpg"
             face_bytes = face_image_to_bytes(cropped_face)
             print(f"DEBUG: Uploading face {i+1} to S3")
             upload_to_s3(face_bytes, face_key, bucket)
-            
+
             # 個別照合
             print(f"DEBUG: Searching face {i+1} in collection")
             matches = search_known_faces(bucket, face_key, collection_id)
             print(f"DEBUG: Face {i+1} search completed")
-            
+
             if matches:
                 # 最高類似度を取得
                 max_similarity = max(match.get('Similarity', 0) for match in matches)
                 print(f"DEBUG: Face {original_index} similarity: {max_similarity:.2f}%")
-                
-                # 一番高い類似度を記録
-                if max_similarity > best_similarity:
-                    best_similarity = max_similarity
-                    best_match_index = original_index
+
+                # 閾値以上なら登録済み顔として記録
+                if max_similarity >= similarity_threshold:
+                    matched_indices.add(original_index)
+                    print(f"DEBUG: Face {original_index} matched as registered face")
             else:
                 print(f"DEBUG: Face {original_index} no matches found")
-                
+
         except Exception as e:
             print(f"ERROR: Failed processing face {i+1}: {str(e)}")
             import traceback
             print(f"ERROR traceback: {traceback.format_exc()}")
             continue
-    
+
     print(f"DEBUG: Individual processing completed")
-    
-    # 結果判定
-    if best_match_index >= 0 and best_similarity >= similarity_threshold:
-        print(f"DEBUG: User face detected (index={best_match_index}, similarity={best_similarity:.2f}%)")
-        print(f"DEBUG: Excluding user face from mosaic")
-        
-        # ユーザーの顔以外をモザイク対象に
+    print(f"DEBUG: {len(matched_indices)} registered faces found: {matched_indices}")
+
+    # 結果判定: 登録済み顔を全て除外
+    if matched_indices:
         for i, face in enumerate(detected_faces):
-            if i != best_match_index:
+            if i not in matched_indices:
                 faces_to_mosaic.append(face)
     else:
-        print(f"DEBUG: No user face found with sufficient similarity (best={best_similarity:.2f}%)")
-        print(f"DEBUG: Applying mosaic to all faces")
+        print(f"DEBUG: No registered faces found, applying mosaic to all faces")
         faces_to_mosaic = detected_faces
-    
+
     print(f"DEBUG: {len(faces_to_mosaic)} faces will be mosaicked")
     return faces_to_mosaic
 
