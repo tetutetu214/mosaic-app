@@ -142,17 +142,50 @@ class TestFaceMatcher:
     @patch('face_cropper.face_image_to_bytes')
     @patch('face_cropper.crop_all_faces')
     @patch('collection_manager.search_known_faces')
+    def test_filter_faces_individually_multiple_registered_faces(self, mock_search, mock_crop, mock_to_bytes, mock_upload):
+        """複数の登録済み顔がある場合、全て除外されるテスト"""
+        three_faces = [
+            {'BoundingBox': {'Left': 0.1, 'Top': 0.1, 'Width': 0.2, 'Height': 0.2}},
+            {'BoundingBox': {'Left': 0.4, 'Top': 0.1, 'Width': 0.2, 'Height': 0.2}},
+            {'BoundingBox': {'Left': 0.7, 'Top': 0.1, 'Width': 0.2, 'Height': 0.2}},
+        ]
+        mock_crop.return_value = [
+            (Image.new('RGB', (100, 100)), 0),
+            (Image.new('RGB', (100, 100)), 1),
+            (Image.new('RGB', (100, 100)), 2),
+        ]
+        mock_to_bytes.return_value = b'fake_image_data'
+
+        # 1人目と2人目が登録済み、3人目は未登録
+        mock_search.side_effect = [
+            [{'Similarity': 95.0}],  # 1人目: 登録済み
+            [{'Similarity': 90.0}],  # 2人目: 登録済み
+            [{'Similarity': 20.0}],  # 3人目: 未登録
+        ]
+
+        result = filter_faces_individually(
+            three_faces, self.test_image, 'bucket', 'prefix', 'collection', similarity_threshold=70.0
+        )
+
+        # 登録済みの2人が除外され、未登録の3人目のみモザイク対象
+        assert len(result) == 1
+        assert result[0] == three_faces[2]
+
+    @patch('image_handler.upload_to_s3')
+    @patch('face_matcher.face_image_to_bytes')
+    @patch('face_matcher.crop_all_faces')
+    @patch('collection_manager.search_known_faces')
     def test_filter_faces_individually_crop_failure(self, mock_search, mock_crop, mock_to_bytes, mock_upload):
         """顔クロップ失敗の場合のテスト"""
         # クロップが1つしか成功しない
         mock_crop.return_value = [(Image.new('RGB', (100, 100)), 0)]  # 1つの顔のみ
         mock_to_bytes.return_value = b'fake_image_data'
         mock_search.return_value = [{'Similarity': 95.0}]
-        
+
         result = filter_faces_individually(
             self.detected_faces, self.test_image, 'bucket', 'prefix', 'collection', similarity_threshold=70.0
         )
-        
-        # クロップできた顔が除外され、残りの顔が返される
+
+        # クロップできた顔（インデックス0）が除外され、残りの顔が返される
         assert len(result) == 1
         assert result[0] == self.detected_faces[1]  # インデックス1の顔が残る
