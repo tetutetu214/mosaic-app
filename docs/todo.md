@@ -3,32 +3,38 @@
 ## 進行中
 なし
 
-## 次にやること（Phase 2-A: spec.md 作成）
-- [ ] docs/spec.md を新規作成
-  - SAM テンプレート（template.yaml）の完全な構造設計
-  - handler Lambda の擬似コード（webhook signature 検証 + SQS送信）
-  - processor Lambda の擬似コード（既存ロジック + push API 送信）
-  - 環境変数の一覧（新規追加: SQS_QUEUE_URL）
-  - IAM ポリシードキュメントの最小権限設計
-- [ ] 設計内容のレビューを受ける（てつてつ）
+## Phase 2-A: spec.md 作成（完了 2026-05-09）
+- [x] 第1章 ディレクトリ構造とビルド構成
+- [x] 第2章 CDK スタック全体構造
+- [x] 第3章 handler Lambda 仕様
+- [x] 第4章 processor Lambda 仕様
+- [x] 第5章 SQS / DLQ 仕様
+- [x] 第6章 環境変数一覧
+- [x] 第7章 IAM ポリシー最小権限設計
+- [x] 第8章 テスト戦略
+- [x] てつてつによる章ごとレビュー
+- [x] 実装着手前の理解度テスト（CLAUDE.md ハーネス規約）— 2026-05-09 全問正解
 
 ## Phase 2-B: 実装
-- [ ] SAM CLI のローカルインストール確認
-- [ ] template.yaml 作成
+- [ ] AWS CDK のローカル環境確認（`cdk --version` / Python venv）
+- [ ] CDK プロジェクト雛形作成（`cdk/` 配下に app.py / stacks / cdk.json / requirements.txt）
 - [ ] handler Lambda コード（webhook受信専用）の実装
 - [ ] processor Lambda コード（画像処理専用）の実装
-- [ ] テストコード追加（handler / processor 個別）
-- [ ] sam build でローカル検証
+- [ ] shared/ ディレクトリの共通ユーティリティ実装
+- [ ] テストコード追加（handler / processor / shared 個別）
+- [ ] `cdk synth` で CFn テンプレートを生成して内容確認
+- [ ] `cdk diff` で既存スタックとの差分確認
 
 ## Phase 2-C: デプロイ・検証
-- [ ] sam deploy --guided で初回デプロイ
+- [ ] `cdk bootstrap` 実行確認（同アカウント・同リージョンで未実施なら）
+- [ ] `cdk deploy` で初回デプロイ
 - [ ] LINE Webhook URL を新エンドポイントに切替
 - [ ] 動作検証（plan.md の検証計画 参照）
 - [ ] ログ・メトリクス監視
 
 ## Phase 2-D: 旧構成の停止
 - [ ] 旧 mosaic-app Lambda の reserved concurrency = 0 で実質無効化
-- [ ] 1週間問題なければ旧 API Gateway, 旧 Lambda 削除
+- [ ] 1週間問題なければ旧 API Gateway, 旧 Lambda 削除（CDK スタック外なので個別削除）
 - [ ] CI/CD（.github/workflows/deploy.yml）を新スタック用に更新
 
 ## 既存課題（Phase 2 と並行・後追い可）

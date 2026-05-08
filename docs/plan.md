@@ -63,13 +63,15 @@ LINE → API Gateway → handler Lambda（受信・即200）
 
 ## 技術選定（理由付き）
 
-### IaC: AWS SAM
-**選定理由**: Lambda + API Gateway + SQS のサーバーレス構成に特化したフレームワーク。`AWS::Serverless::Function` 1リソースで Lambda・実行ロール・イベントソースマッピングが一括宣言できるため、CFn を直接書くよりテンプレート行数が約半分になる。Pythonランタイム・Container Image 両対応。
+### IaC: AWS CDK (Python)
+**選定理由**: 既存プロジェクト（chicken-rag）で CDK の運用経験があり、ナレッジを再利用できる。CLAUDE.md の言語選定方針（Python 優先）とも合致し、新たに YAML/別言語を学ぶ必要がない。L2 コンストラクトが IAM 権限を最小権限で自動付与する仕組みも、本構成のように複数 Lambda + SQS が絡む場面で安全性が高い。CDK の `DockerImageAsset` がイメージの digest 管理を自動化するため、Container Image 更新時の CFn 検出問題も透過的に扱える。
 
 **代替案との比較**:
-- **CDK**: コード（Python/TS）で柔軟に書けるが、今回のシンプル構成ではオーバースペック。学習コストも上がる
-- **Terraform**: マルチクラウド対応で強力だが、AWS純正のSAMより SAM 固有の最適化（`AWS::Serverless::Function` の event 短縮記法など）が使えない
-- **CFn 直書き**: 最も低レベルだが、テンプレートが冗長になる
+- **SAM**: YAML 完結で最初の学習が軽い利点はあるが、CDK 経験がある前提では学習負担がむしろ増える方向。Lambda + SQS 程度の構成では行数も大差ない（むしろ CDK の方が短い）
+- **Terraform**: マルチクラウド対応の汎用性は高いが、Python ベースでない・AWS 純正でないため、本プロジェクトでは優位性なし
+- **CFn 直書き**: IAM Role や EventSourceMapping を手書きする必要があり、行数が膨らむ
+
+※ 2026-05-07 の plan 初稿時点では SAM を選定していたが、2026-05-08 のセッションで「てつてつは Python 優先かつ CDK 経験あり」という前提を踏まえ CDK に再選定し直した。経緯は knowledge.md 参照。
 
 ### SQS: Standard
 **選定理由**: webhook イベントは順序保証不要で、重複排除も processor 側で冪等にすれば対応可能。Standard は TPS 制限なし、月間 100万メッセージまで無料。
@@ -133,15 +135,15 @@ AWS 公式ベストプラクティスに従う。
 
 ### 段階的移行手順（次セッション以降）
 
-1. SAM テンプレート作成（`template.yaml`）
+1. CDK プロジェクト雛形作成（`cdk/` ディレクトリに `app.py`・`stacks/`・`cdk.json`）
 2. handler Lambda コード作成（`handler/` ディレクトリに分離）
 3. processor Lambda コード作成（既存 lambda-function/ をベースに修正）
-4. ローカル `sam build` でビルド検証
-5. `sam deploy --guided` でステージング相当の環境にデプロイ
+4. ローカル `cdk synth` で CFn テンプレートを生成して内容確認、`cdk diff` で既存スタックとの差分確認
+5. `cdk bootstrap`（未実施なら）→ `cdk deploy` でデプロイ
 6. テスト用LINEチャネル（あれば）で動作確認、なければ本番LINE Webhook URL を一時的に切替
 7. 1〜2日様子見、ログ・メトリクス確認
 8. 問題なければ既存 Lambda の停止（reserved concurrency = 0 で実質無効化）
-9. 1週間以上問題なければ既存リソース削除
+9. 1週間以上問題なければ既存リソース削除（`cdk destroy` ではなく旧 Lambda・旧 API Gateway を個別に削除する。新スタックには影響しない）
 
 ## リスクと対応
 
@@ -151,7 +153,7 @@ AWS 公式ベストプラクティスに従う。
 | LINE 画像取得 API の有効期限（メッセージID 1週間） | 古いメッセージが処理できない | SQS のretentionは4日なので問題なし。DLQ送りになった画像は手動再処理時に注意 |
 | Rekognition のレート制限 | スロットリング | processor の reserved concurrency を5に絞る、DLQ から再処理 |
 | webhook signature 未検証 | なりすまし送信を受け付ける | handler Lambda で `X-Line-Signature` を必ず検証、不一致なら403 |
-| Container Image 更新が CFn 自動検出されない | デプロイしても新コードが反映されないリスク | `sam deploy` は image URI に digest を含めるので問題なし。CI/CD では git SHA タグで毎回別タグ |
+| Container Image 更新が CFn 自動検出されない | デプロイしても新コードが反映されないリスク | CDK の `DockerImageAsset` は build 時にコンテンツハッシュ（SHA256）を計算して image URI に埋め込むため、コード変更があれば自動で別イメージとして push され Lambda が更新される |
 
 ## コスト見積（個人ユース月100リクエスト想定）
 
@@ -184,7 +186,7 @@ AWS 公式ベストプラクティスに従う。
 
 | フェーズ | 内容 | 想定セッション数 |
 |---|---|---|
-| Phase 2-A | docs整備・SAMテンプレート設計（spec.md） | 1セッション |
+| Phase 2-A | docs整備・CDKスタック設計（spec.md） | 1セッション |
 | Phase 2-B | handler / processor Lambda コード実装 | 1〜2セッション |
 | Phase 2-C | sam deploy・動作検証・LINE Webhook 切替 | 1セッション |
 | Phase 2-D | 既存リソース停止・削除・CI/CD更新 | 1セッション |
@@ -193,6 +195,8 @@ AWS 公式ベストプラクティスに従う。
 
 - [Process events asynchronously with API Gateway and Lambda](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/process-events-asynchronously-with-amazon-api-gateway-and-aws-lambda.html)
 - [Using Lambda with Amazon SQS](https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html)
-- [AWS::Serverless::Function (SAM)](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html)
+- [AWS CDK v2 Python API Reference](https://docs.aws.amazon.com/cdk/api/v2/python/)
+- [AWS CDK aws-lambda DockerImageFunction](https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_lambda/DockerImageFunction.html)
+- [AWS CDK aws-lambda-event-sources SqsEventSource](https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_lambda_event_sources/SqsEventSource.html)
 - [LINE Messaging API webhook receiving](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)
 - [LINE Messaging API pricing](https://developers.line.biz/en/docs/messaging-api/pricing/)
