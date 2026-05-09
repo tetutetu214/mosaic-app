@@ -1,137 +1,264 @@
-# Mosaic App
-LINEで送った写真の顔を自動でモザイク処理するサーバーレスアプリケーション
+# mosaic-app
+
+LINE で送った写真の顔を自動でモザイク処理するサーバーレスアプリケーション。あらかじめ登録した顔だけはモザイクから除外する。
+
+LINE webhook 受信から画像処理を SQS で分離した非同期構成。LINE 側に求められる「2 秒以内に 200 を返す」を確実に守りつつ、画像処理は時間制約なしで動く。
+
+## アーキテクチャ
+
+```mermaid
+flowchart LR
+    user(["LINE User"])
+
+    subgraph aws["AWS Cloud (us-east-1)"]
+        apigw["API Gateway<br/>POST /webhook"]
+        handler["handler Lambda<br/>5s / 512MB"]
+        sqs["SQS Queue<br/>visibility 1080s"]
+        dlq["SQS DLQ<br/>retention 14d"]
+        processor["processor Lambda<br/>180s / 1024MB<br/>reserved 5"]
+        s3[("S3<br/>input/output images")]
+        rek["Rekognition<br/>Detect / Search"]
+        ddb[("DynamoDB<br/>registration state")]
+        ssm["SSM Parameter Store<br/>LINE secrets"]
+    end
+
+    user -->|"1 webhook"| apigw
+    apigw -->|"2 invoke"| handler
+    handler -.->|"3 signature"| ssm
+    handler <-.->|"4 state"| ddb
+    handler -->|"5 SendMessage"| sqs
+    sqs -->|"6 EventSource (batch=1)"| processor
+    processor <-->|"7 Get/PutObject"| s3
+    processor -->|"8 Detect / Index / Search"| rek
+    sqs -.->|"9 after 5 retries"| dlq
+```
+
+詳細図は `docs/architecture.drawio`（draw.io で開く）。
+
+### データフロー
+
+1. LINE User が写真を送ると LINE Platform から webhook が API Gateway に POST される
+2. API Gateway が handler Lambda を起動する
+3. handler Lambda が SSM Parameter Store から LINE Channel Secret を取り出して `X-Line-Signature` を検証する
+4. handler Lambda が DynamoDB を `userId` で読み書きして登録モード状態を判定する
+5. handler Lambda が SQS にメッセージを投入して即座に 200 を返す
+6. SQS の EventSourceMapping が processor Lambda を起動する（`reserved_concurrent_executions=5`）
+7. processor Lambda が LINE Content API で原画像を取得して S3 に保存し、結果画像も S3 に書き戻す
+8. processor Lambda が Rekognition で顔検出と照合を行い、登録済み以外をモザイク化する
+9. 5 回リトライしても失敗したメッセージは DLQ に退避する（保管期限 14 日）
+
+handler / processor の LINE 返信はそれぞれ Reply API / Push API を使う。CloudWatch Logs は両 Lambda の標準出力を自動収集する。
 
 ## 使い方
-### 基本操作
-1. LINE友達追加でボットを追加
-2. 写真を送信すると自動で登録者以外の顔にモザイクをかけて返信
+
+### 友達追加
+
+LINE で公式アカウントを友達追加すると利用開始。
+
+### 写真を送る
+
+写真を送信すると数十秒以内に処理結果が返ってくる。デフォルト動作は「登録した顔以外をモザイク化」。
 
 ### コマンド
-- 登録: モザイクから除外したい顔を登録
-- 状態: 現在の設定と登録済み顔数を確認
+
+| メッセージ | 動作 |
+|---|---|
+| `登録` | 次に送られた写真の顔を Rekognition コレクションに登録（モザイク除外対象になる）|
+| `状態` | 現在のモード設定と登録済み顔数を返信 |
 
 ### 顔登録の流れ
-1. 「登録」とメッセージ送信
-2. 1人だけが写った顔写真を送信
-3. 登録完了後、以降の写真では登録者の顔のみ除外される
+
+1. `登録` とテキスト送信
+2. 1 人だけが写った顔写真を送信
+3. 登録完了後、以降の写真ではその人の顔だけモザイクが外れる
 
 ### 注意事項
-- 顔登録は1枚の写真に1人のみ
-- 複数人が写った写真では登録できません
-- 20人以下の写真で個別照合、21人以上では全員モザイク
 
-### 複数人の登録について
-複数人を登録した場合、写真に登録者が複数写っていても優先順位や1人だけ除外といった扱いはなく、登録者全員がモザイク除外対象になります。判定は類似度50%以上で行われ、横顔・暗所・小さく写っているなど類似度が下回るケースではモザイクがかかります。
+- 顔登録は 1 枚に 1 人のみ。複数人が写った写真は登録できない
+- 1 枚に 20 人以下の顔なら個別照合、21 人以上は性能保護のため全員モザイクになる
+- 類似度 50% 以上で「登録済み顔」と判定する。横顔・暗所・小さく写ると照合に失敗してモザイクがかかる
+- 複数人を登録した場合は登録者全員がモザイク除外対象になる（優先順位や 1 人だけ除外といった扱いはしない）
 
+## 技術スタック
 
-## セットアップ
-### 1. AWS環境構築
-```bash
-# ECRリポジトリ作成
-aws ecr create-repository --repository-name mosaic-app
+- 言語: Python 3.12
+- 主要ライブラリ: Pillow（モザイク処理）, boto3（AWS SDK）, requests（LINE API）
+- インフラ: AWS Lambda（Container Image）, API Gateway REST, SQS, DynamoDB, S3, Rekognition, SSM Parameter Store
+- IaC: AWS CDK v2 (Python)
+- リージョン: us-east-1
 
-# Rekognitionコレクション作成
-aws rekognition create-collection --collection-id your-collection-name
+## ディレクトリ構造
 
-# S3バケット作成
-aws s3 mb s3://your-bucket-name
+```
+mosaic-app/
+├── cdk/                     # CDK プロジェクト
+│   ├── app.py
+│   ├── stacks/mosaic_stack.py
+│   ├── cdk.json
+│   └── requirements.txt
+├── handler/                 # 受信用 Lambda
+│   ├── Dockerfile
+│   ├── app.py
+│   └── requirements.txt
+├── processor/               # 画像処理用 Lambda
+│   ├── Dockerfile
+│   ├── app.py
+│   ├── image_handler.py     # モザイク処理ロジック
+│   ├── mosaic_processor.py
+│   ├── face_cropper.py
+│   ├── face_matcher.py
+│   ├── collection_manager.py
+│   └── requirements.txt
+├── shared/                  # handler/processor 共通コード
+│   ├── line_signature.py
+│   └── line_api.py
+├── tests/                   # pytest（cdk/handler/processor/shared 配下にミラー）
+├── scripts/                 # デプロイ・初期化スクリプト
+│   ├── deploy.sh
+│   └── setup-secrets.sh
+├── docs/                    # plan/spec/todo/knowledge と構成図
+└── .github/workflows/       # CI/CD（GitHub Actions）
 ```
 
-### 2. LINE Developers設定
-1. LINE Developersでプロバイダー作成
-2. Channel Access TokenとChannel Secretを取得
-3. Webhook URLを設定
+## 前提条件
 
+ローカル環境に必要なもの:
 
-### 3. デプロイ
+- Python 3.12
+- Docker（CDK が `DockerImageAsset` をビルドするため必須）
+- AWS CDK CLI v2 (`npm i -g aws-cdk` または `pipx install aws-cdk`)
+- AWS CLI（認証済み、`us-east-1` をデフォルトに）
+
+LINE 側に必要なもの:
+
+- LINE Developers でチャネル作成
+- Channel Access Token（長期）と Channel Secret を発行
+
+## 初回セットアップ
+
+### 1. シークレットを `~/.secrets/mosaic-app.env` に保存
+
+リポジトリの外に置くこと。
+
 ```bash
-# Dockerイメージビルド
-docker build -t mosaic-app .
-
-# ECRにプッシュ
-docker tag mosaic-app:latest your-account.dkr.ecr.region.amazonaws.com/mosaic-app:latest
-docker push your-account.dkr.ecr.region.amazonaws.com/mosaic-app:latest
-
-# Lambda関数作成・更新
-aws lambda create-function --function-name mosaic-app --code ImageUri=your-ecr-uri
+# ~/.secrets/mosaic-app.env
+S3_BUCKET_NAME=<画像保存用 S3 バケット名>
+REKOGNITION_COLLECTION_ID=<Rekognition コレクション ID>
+LINE_CHANNEL_SECRET=<LINE Developers から>
+LINE_CHANNEL_ACCESS_TOKEN=<LINE Developers から>
+LINE_CHANNEL_SECRET_PARAM=/mosaic-app/line/channel-secret
+LINE_CHANNEL_ACCESS_TOKEN_PARAM=/mosaic-app/line/channel-access-token
 ```
 
-### 4.環境変数設定 
+### 2. 既存リソース（S3 バケット・Rekognition コレクション）を作成
+
+CDK では作成しない。状態を持つリソースなので手動管理する。
+
 ```bash
-S3_BUCKET_NAME=your-bucket-name
-REKOGNITION_COLLECTION_ID=your-collection-name
-MOSAIC_MODE=exclude
-LINE_CHANNEL_ACCESS_TOKEN=your-line-token
-LINE_CHANNEL_SECRET=your-line-secret
+aws s3 mb s3://<bucket-name> --region us-east-1
+aws rekognition create-collection \
+  --collection-id <collection-id> \
+  --region us-east-1
 ```
 
+### 3. SSM Parameter Store に LINE シークレットを投入
 
-## 技術構成
-### アーキテクチャ:
-LINE Bot → API Gateway → Lambda → Rekognition → S3
+```bash
+./scripts/setup-secrets.sh
+```
 
-### 主要技術:
-- AWS Lambda (Python 3.12 + Docker)
-- AWS Rekognition (顔検出・照合)
-- S3 (プライベート画像ストレージ)
+LINE トークン 2 本を SecureString として SSM に書き込む。値の更新時にも同じスクリプトを使う。
+
+### 4. Python 仮想環境と CDK 依存
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r cdk/requirements.txt -r requirements-dev.txt
+```
+
+### 5. CDK Bootstrap（同アカウント・同リージョンで未実施なら）
+
+```bash
+cd cdk && cdk bootstrap aws://<account-id>/us-east-1
+```
+
+### 6. 初回デプロイ
+
+```bash
+./scripts/deploy.sh
+```
+
+`scripts/deploy.sh` は `~/.secrets/mosaic-app.env` を読み、必要な context を渡して `cdk deploy` を呼ぶ。
+
+### 7. LINE Webhook URL の登録
+
+`cdk deploy` の Outputs に出る API Gateway の URL（`https://<api-id>.execute-api.us-east-1.amazonaws.com/prod/webhook`）を LINE Developers の Webhook URL に設定する。
+
+## 更新デプロイ
+
+コード変更後の再デプロイは `scripts/deploy.sh` を再実行するだけ。CDK の `DockerImageAsset` がコンテンツハッシュで差分を検知し、変更があれば自動で ECR に push して Lambda を更新する。
+
+```bash
+./scripts/deploy.sh
+```
 
 ## テスト
 
-### 単体テスト実行:
 ```bash
+source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-### 特定のテストのみ実行:
+カテゴリ別:
+
 ```bash
-python -m pytest tests/test_face_cropper.py -v
+python -m pytest tests/handler/    # handler Lambda の単体テスト
+python -m pytest tests/processor/  # processor Lambda の単体テスト
+python -m pytest tests/shared/     # 共通モジュール
+python -m pytest tests/cdk/        # CDK スナップショットテスト
 ```
 
-## プロジェクト構造
-```shell
-mosaic-app/
-├── lambda-function/           # Lambda関数コード
-│   ├── lambda_function.py    # メイン処理
-│   ├── config.py            # 設定管理
-│   ├── image_handler.py     # 画像処理（顔数制限対応）
-│   ├── mosaic_processor.py  # モザイク処理
-│   ├── face_cropper.py      # 顔切り出し処理
-│   ├── face_matcher.py      # 個別顔照合処理
-│   ├── collection_manager.py # 顔コレクション管理
-│   ├── registration_state.py # 顔登録状態管理
-│   ├── text_handler.py      # テキストメッセージ処理
-│   ├── requirements.txt     # Lambda依存関係
-│   └── __init__.py         # パッケージ初期化
-├── tests/                   # テストコード
-│   ├── test_collection_manager.py
-│   ├── test_config.py
-│   ├── test_face_cropper.py
-│   ├── test_face_matcher.py
-│   ├── test_image_handler.py
-│   ├── test_image_handler_integration.py
-│   ├── test_lambda_function.py
-│   ├── test_mosaic_processor.py
-│   ├── test_registration_state.py
-│   └── test_text_handler.py
-├── Dockerfile              # コンテナ定義
-├── requirements-dev.txt    # 開発/テスト依存関係
-├── pytest.ini            # pytest設定
-├── trust-policy.json     # IAMロール信頼ポリシー
-└── README.md             # このファイル
-```
+## 環境変数 / context
 
-## 設定オプション
-### モザイク強度調整
-lambda-function/mosaic_processor.pyのmosaic_strengthを変更:
-- 小さい値: 弱いモザイク
-- 大きい値: 強いモザイク（デフォルト: 20）
+CDK スタックに渡す context（`scripts/deploy.sh` で自動セット）:
 
-### モザイクモード
-環境変数 MOSAIC_MODE で変更:
-- all: 全ての顔にモザイク
-- exclude: 登録済み顔を除外（顔数制限付き）
+| context キー | 用途 |
+|---|---|
+| `s3_bucket_name` | 画像保存用 S3 バケット名 |
+| `rekognition_collection_id` | Rekognition コレクション ID |
+| `line_channel_secret_param` | SSM Parameter Store のパラメータ名（Channel Secret 用）|
+| `line_channel_access_token_param` | 同上（Channel Access Token 用）|
 
-### 顔認識設定
-- 類似度閾値: 50%（lambda-function/image_handler.py で変更）
-- 顔数制限: 20人（lambda-function/image_handler.py で変更）
-- AWS Rekognition閾値: 0.0%（lambda-function/collection_manager.py で変更）
+Lambda 実行時に環境変数として渡される値:
+
+| 変数名 | 設定先 | 説明 |
+|---|---|---|
+| `SQS_QUEUE_URL` | handler | エンキュー先キュー URL |
+| `REGISTRATION_TABLE_NAME` | handler | DynamoDB テーブル名 |
+| `REKOGNITION_COLLECTION_ID` | handler / processor | コレクション ID |
+| `LINE_CHANNEL_SECRET_PARAM` | handler | SSM パラメータ名 |
+| `LINE_CHANNEL_ACCESS_TOKEN_PARAM` | handler / processor | SSM パラメータ名 |
+| `S3_BUCKET_NAME` | processor | 画像保存先バケット名 |
+| `MOSAIC_MODE` | processor | `exclude`（登録外モザイク）/ `all`（全員モザイク）|
+
+## 主要な設定値（コード内ハードコード）
+
+| 値 | 場所 | 既定 |
+|---|---|---|
+| 顔数上限（個別照合 / 全員モザイク切替）| `processor/image_handler.py` | 20 人 |
+| Rekognition 類似度閾値 | `processor/image_handler.py` | 50.0 % |
+| モザイク粒度 | `processor/mosaic_processor.py` | 20 |
+| handler Lambda timeout | `cdk/stacks/mosaic_stack.py` | 5 秒 |
+| processor Lambda timeout | `cdk/stacks/mosaic_stack.py` | 180 秒 |
+| SQS visibility timeout | `cdk/stacks/mosaic_stack.py` | 1080 秒（関数 timeout の 6 倍）|
+| DLQ maxReceiveCount | `cdk/stacks/mosaic_stack.py` | 5 |
+| processor 同時実行数 | `cdk/stacks/mosaic_stack.py` | 5（reserved）|
+
+## ドキュメント
+
+- `docs/plan.md` — 設計の背景と技術選定の理由
+- `docs/spec.md` — Lambda 仕様・IAM 最小権限・テスト戦略
+- `docs/todo.md` — 実装タスクの進捗
+- `docs/knowledge.md` — 開発中に得た知見・ハマりどころ
+- `docs/architecture.drawio` — 構成図（draw.io 形式）
