@@ -35,3 +35,8 @@ venv.bak/
 # Docker
 .dockerignore
 env-vars.json
+
+# CDK 自動生成
+cdk/cdk.out/
+cdk/.cdk.staging/
+cdk.out/

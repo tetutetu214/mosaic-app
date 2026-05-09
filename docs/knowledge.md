@@ -97,7 +97,42 @@ plan.md 初稿（2026-05-07）では IaC を AWS SAM としていたが、本日
 - **Lambda 更新中の動作**: 新旧が並存して徐々に切替（ローリング）。健全なイメージならダウンタイム原則ゼロ
 - **コンテナ Lambda のロールバック**: 直前のイメージ digest を `update-function-code --image-uri` で再指定（タグ削除では戻らない）
 
+### 2026-05-09（Phase 2-C デプロイ直前テスト合格）
+- **CDK スタックが CFn 上に展開する実リソース数の感覚**: コード上 9 コンストラクトでも、CDK が IAM Role/Policy・API Gateway 子リソース（Account/Deployment/Stage/Resource/Method）・Lambda Permission を自動展開するため、実際の CFn リソースは約19個になる。`cdk diff` の Resources セクションで確認できる
+- **並行運用（Blue/Green 相当）方式の安全性**: 新スタックを旧スタックの「横」に作り、LINE Webhook URL の切替で本番化する方式では、既存 Lambda・API Gateway は CDK 管轄外で触られない。S3・Rekognition データも維持される。ロールバックは Webhook URL を戻すだけで完了
+- **ロールバック手順の優先順位**: 並行運用ならまず「Webhook URL を旧に戻す」が最安全・最速。`cdk destroy` は重く、SSM 削除や Lambda 無効化は副作用が大きい。リカバリー後は再切替で復活可能なので、新スタックを温存しておく
+
 ### 2026-05-09（Phase 2-A spec.md 完成・実装着手前テスト合格）
 - **SQS visibility_timeout を関数 timeout の6倍に設定する理由**: 受信中の Lambda が処理中に他の Lambda が同じメッセージを取って二重実行するのを防ぐため。SQS は at-least-once delivery で、visibility timeout が短すぎると同一メッセージが複数 Lambda に再配送される
 - **reply token を SQS に乗せない理由**: reply token は受信から1分しか有効でない。SQS で非同期化すると processor が取り出した時点で期限切れの可能性があるため、Push API に統一する
 - **processor の reserved_concurrent_executions=5 の根拠**: Rekognition のレート制限と LINE Push API の通数枠が外部の上限。SQS は数千 TPS でも捌けるが、それに引きずられて processor が無限スケールするとスロットリング・通数オーバーが起きる。Lambda 側の予約並列度で抑える
+
+## 2026-05-09 セッションでの Phase 2-B 実装で得た知見
+
+### CDK の DockerImageAsset で directory にプロジェクトルートを指定するときの罠
+
+`from_image_asset(directory=PROJECT_ROOT, file="handler/Dockerfile")` のようにビルドコンテキストをプロジェクトルートにすると、shared/ などの兄弟ディレクトリを Dockerfile から `COPY shared/` できる利点がある。
+
+しかし **exclude を指定しないと cdk synth が ENAMETOOLONG で失敗する**。
+
+理由: CDK は asset を `cdk/cdk.out/asset.{hash}/` にコピーする。プロジェクトルートには `cdk/` がそのまま含まれているので、コピー対象に `cdk/cdk.out/asset.{hash}/cdk/cdk.out/asset.{hash}/...` という再帰ネストが発生し、ファイル名が長くなりすぎてOSエラー。
+
+**対策**: `from_image_asset(exclude=[...])` で次のような大物・自己参照系のパスを除外する。
+- `cdk/cdk.out`、`cdk/.cdk.staging`、`cdk` 自体
+- `.venv`（数百MB）
+- `tests`、`docs`、`lambda-function`、`scripts`（Lambda ランタイムで不要）
+- `.git`、`node_modules`、`**/__pycache__`、`.pytest_cache`
+
+教訓: DockerImageAsset でプロジェクトルートを context に使うときは、`exclude` または `.dockerignore` での除外を **必ず** セットで考える。spec 段階でも「除外パスの設計」をチェック項目に入れるべき。
+
+### pytest と sys.path 解決の罠（pytest 9.x）
+
+- pytest.ini のヘッダーは `[pytest]`（`[tool:pytest]` は setup.cfg / tox.ini 用、pytest 8+ で pytest.ini では機能しない設定がある）
+- `tests/<sub>/__init__.py` を作ると、pytest が tests/ 配下を「パッケージ」として扱い、プロジェクトルートを sys.path に追加してくれない場合がある（既存 `tests/` 直下に `__init__.py` がない構造ではこれが原因で ModuleNotFoundError）
+- 対策: ルートに `conftest.py` を置き、`sys.path.insert(0, str(Path(__file__).parent))` で明示。tests/<sub>/ には `__init__.py` を作らない
+
+### Lambda コンテナの内部モジュールを pytest から import する方法
+
+Lambda runtime は `LAMBDA_TASK_ROOT` を sys.path に含めるので、`processor/app.py` が `from mosaic_processor import detect_faces` のように **同ディレクトリ兄弟モジュール** を直接 import できる。
+
+ローカルテストで同じ振る舞いを再現するには、`tests/processor/conftest.py` で `sys.path.insert(0, str(PROJECT_ROOT / "processor"))` を実行する。これで本番ランタイムと同じ import 解決が走り、コードを変更せずにテストできる。
