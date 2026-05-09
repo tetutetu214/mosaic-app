@@ -41,12 +41,18 @@ def _get_secret(param_name: str) -> str:
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     body_str = event.get("body") or ""
-    signature = event.get("headers", {}).get("X-Line-Signature", "")
+    # API Gateway や CloudFront で大文字小文字が変わるため両方を吸収する
+    headers = event.get("headers") or {}
+    headers_lower = {k.lower(): v for k, v in headers.items()}
+    signature = headers_lower.get("x-line-signature", "")
 
     # 署名検証
     channel_secret = _get_secret(LINE_CHANNEL_SECRET_PARAM)
     if not verify_signature(body_str, signature, channel_secret):
-        LOGGER.warning("invalid signature")
+        LOGGER.warning(
+            "invalid signature (body_len=%d signature_present=%s)",
+            len(body_str), bool(signature),
+        )
         return _response(403, {"error": "invalid signature"})
 
     # JSON パース

@@ -65,3 +65,23 @@ def test_invalid_json_returns_400(app, aws_setup):
         result = app.lambda_handler(event, None)
 
     assert result["statusCode"] == 400
+
+
+def test_lowercase_signature_header_is_accepted(app, aws_setup):
+    """API Gateway がヘッダーを小文字化したケース"""
+    body = '{"events":[]}'
+    signature = _make_signature(body, aws_setup["channel_secret"])
+    event = {
+        "httpMethod": "POST",
+        "headers": {
+            "x-line-signature": signature,
+            "content-type": "application/json",
+        },
+        "body": body,
+        "isBase64Encoded": False,
+    }
+
+    with patch("shared.line_api.requests.post"):
+        result = app.lambda_handler(event, None)
+
+    assert result["statusCode"] == 200
