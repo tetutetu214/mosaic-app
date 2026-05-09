@@ -136,3 +136,24 @@ plan.md 初稿（2026-05-07）では IaC を AWS SAM としていたが、本日
 Lambda runtime は `LAMBDA_TASK_ROOT` を sys.path に含めるので、`processor/app.py` が `from mosaic_processor import detect_faces` のように **同ディレクトリ兄弟モジュール** を直接 import できる。
 
 ローカルテストで同じ振る舞いを再現するには、`tests/processor/conftest.py` で `sys.path.insert(0, str(PROJECT_ROOT / "processor"))` を実行する。これで本番ランタイムと同じ import 解決が走り、コードを変更せずにテストできる。
+
+### Phase 2 完了確認は CloudWatch Logs の invocation 履歴で十分
+
+Phase 2-C の「動作検証」「ログ・メトリクス監視」は別資料を残さなくても CloudWatch Logs の invocation 履歴で事後確認できる。`aws logs describe-log-streams --log-group-name /aws/lambda/<関数名> --order-by LastEventTime --descending` で最新ストリームの `lastEventTimestamp` を見れば、どこまで動いたかが分かる。
+
+教訓: 段階移行の進捗を記録するときは「いつ deploy したか」「いつ Webhook 切替したか」だけ docs に残し、動作確認の証拠は CloudWatch を信頼してよい。スクショ等を docs に貼る必要はない。
+
+### draw.io 構成図の運用 (WSL 環境)
+
+WSL 上で `aws-architecture-diagram` skill を使って `.drawio` を生成しても、Windows 側に draw.io desktop が入っていないと PNG エクスポートはできない（`drawio` CLI が PATH にない）。
+
+- 対策: README に Mermaid 図を埋め込んでおく。GitHub がネイティブレンダリングするので追加ツール不要
+- 詳細図は `.drawio` を併存させて、編集時のみ draw.io.com（ブラウザ）か draw.io desktop で開く運用
+
+また、skill 同梱の `fix_step_badges.py` は `defusedxml.ElementTree` を `ET` でエイリアスして `ET.Element` を型ヒントに使っているが、defusedxml は `Element` を再エクスポートしていないため Python 3.12 で `AttributeError` で落ちる。バッジ位置を手動で十分間隔を空けて配置すれば回避可能。
+
+### gh api でネストフィールドを更新するときは `--input` で JSON を渡す
+
+`gh api repos/<owner>/<repo> -X PATCH -f security_and_analysis.secret_scanning.status=enabled` のように `-f` でドット区切りキーを指定しても、ネストオブジェクトに展開されず文字列キーとしてそのまま送られて無視される。
+
+対策: `echo '{...}' | gh api ... --input -` で JSON を直接 stdin から渡す。Secret Scanning の有効化など、ネストされた `security_and_analysis` を更新する API ではこの方法が必要。

@@ -4,8 +4,7 @@
 なし
 
 ## 残課題
-- [ ] AWS リソース（S3バケット名・Rekognition コレクションID）の控えを `~/.secrets/` に保存
-- [ ] Secret Scanning（Push Protection）の有効化確認
+なし（Phase 2 完了 2026-05-09）
 
 ## Phase 2-A: spec.md 作成（完了 2026-05-09）
 - [x] 第1章 ディレクトリ構造とビルド構成
