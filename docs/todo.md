@@ -32,10 +32,18 @@
 - [ ] 動作検証（plan.md の検証計画 参照）
 - [ ] ログ・メトリクス監視
 
-## Phase 2-D: 旧構成の停止
-- [ ] 旧 mosaic-app Lambda の reserved concurrency = 0 で実質無効化
-- [ ] 1週間問題なければ旧 API Gateway, 旧 Lambda 削除（CDK スタック外なので個別削除）
-- [ ] CI/CD（.github/workflows/deploy.yml）を新スタック用に更新
+## Phase 2-D: 旧構成の停止（一部完了 2026-05-09）
+- [x] 旧 mosaic-app Lambda 削除（CDK スタック外なので個別削除）
+- [x] 旧 API Gateway `mosaic-app-api` (`1w1zu1vfnb`) 削除
+- [x] 旧 ECR リポジトリ `mosaic-app` 削除（イメージ含む `--force`）
+- [x] 旧 CloudWatch Log Group `/aws/lambda/mosaic-app` 削除
+- [x] 旧 IAM Role `lambda-execution-role` 削除（attached policies の detach 込み）
+- [ ] CI/CD（.github/workflows/deploy.yml）を新スタック用に更新（or 削除）
+
+### 残存（共有・温存）
+- S3 バケット（画像保存・登録顔元）
+- Rekognition コレクション `mosaic-app-faces`（登録顔データ）
+- SSM Parameter Store の `/mosaic-app/line-channel-*`
 
 ## 既存課題（Phase 2 と並行・後追い可）
 - [ ] GitHub Actions の AWS_ROLE_ARN secret 設定（OIDC連携用 IAM Role 含む）。現状CI/CDが一度も発火していない
