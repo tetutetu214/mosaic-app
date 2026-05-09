@@ -109,7 +109,7 @@ class MosaicStack(Stack):
                 exclude=DOCKER_ASSET_EXCLUDES,
             ),
             timeout=Duration.seconds(5),
-            memory_size=256,
+            memory_size=512,  # コールドスタート対策(CPU配分増加でInit短縮)
             environment={
                 "SQS_QUEUE_URL": queue.queue_url,
                 "REGISTRATION_TABLE_NAME": table.table_name,
@@ -168,10 +168,17 @@ class MosaicStack(Stack):
                 resources=[f"arn:aws:s3:::{s3_bucket_name}/*"],
             )
         )
+        # rekognition:DetectFaces はコレクション非依存のため Resource: "*"
+        processor_fn.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["rekognition:DetectFaces"],
+                resources=["*"],
+            )
+        )
+        # IndexFaces / SearchFacesByImage はコレクションに紐付く
         processor_fn.add_to_role_policy(
             iam.PolicyStatement(
                 actions=[
-                    "rekognition:DetectFaces",
                     "rekognition:IndexFaces",
                     "rekognition:SearchFacesByImage",
                 ],

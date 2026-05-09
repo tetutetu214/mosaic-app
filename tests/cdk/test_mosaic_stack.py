@@ -82,7 +82,7 @@ def test_handler_function_settings():
         "AWS::Lambda::Function",
         Match.object_like({
             "Timeout": 5,
-            "MemorySize": 256,
+            "MemorySize": 512,
         }),
     )
 
