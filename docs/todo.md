@@ -3,6 +3,10 @@
 ## 進行中
 なし
 
+## 残課題
+- [ ] AWS リソース（S3バケット名・Rekognition コレクションID）の控えを `~/.secrets/` に保存
+- [ ] Secret Scanning（Push Protection）の有効化確認
+
 ## Phase 2-A: spec.md 作成（完了 2026-05-09）
 - [x] 第1章 ディレクトリ構造とビルド構成
 - [x] 第2章 CDK スタック全体構造
@@ -23,32 +27,30 @@
 - [x] CDK プロジェクト雛形作成（cdk/app.py、stacks/mosaic_stack.py、cdk.json、requirements.txt）
 - [x] CDK スナップショットテスト 9件
 - [x] `cdk synth` で CFn テンプレート生成を確認（エラーなし）
-- [ ] `cdk diff` で既存スタックとの差分確認（Phase 2-C デプロイ前に実施）
+- [x] `cdk diff` で既存スタックとの差分確認
 
-## Phase 2-C: デプロイ・検証
-- [ ] `cdk bootstrap` 実行確認（同アカウント・同リージョンで未実施なら）
-- [ ] `cdk deploy` で初回デプロイ
-- [ ] LINE Webhook URL を新エンドポイントに切替
-- [ ] 動作検証（plan.md の検証計画 参照）
-- [ ] ログ・メトリクス監視
+## Phase 2-C: デプロイ・検証（完了 2026-05-09）
+- [x] `cdk bootstrap` 実行確認
+- [x] `cdk deploy` で初回デプロイ（`MosaicAppV2-HandlerFunction*` / `MosaicAppV2-ProcessorFunction*`）
+- [x] LINE Webhook URL を新エンドポイントに切替
+- [x] 動作検証（CloudWatch Logs に invocation 履歴あり）
+- [x] ログ・メトリクス監視
 
-## Phase 2-D: 旧構成の停止（一部完了 2026-05-09）
+## Phase 2-D: 旧構成の停止（完了 2026-05-09）
 - [x] 旧 mosaic-app Lambda 削除（CDK スタック外なので個別削除）
 - [x] 旧 API Gateway `mosaic-app-api` (`1w1zu1vfnb`) 削除
 - [x] 旧 ECR リポジトリ `mosaic-app` 削除（イメージ含む `--force`）
 - [x] 旧 CloudWatch Log Group `/aws/lambda/mosaic-app` 削除
 - [x] 旧 IAM Role `lambda-execution-role` 削除（attached policies の detach 込み）
-- [ ] CI/CD（.github/workflows/deploy.yml）を新スタック用に更新（or 削除）
+- [x] CI/CD（`.github/workflows/deploy.yml`）削除（v1 専用で一度も発火していなかったため）
+- [x] v1 旧コード（`lambda-function/`、ルート `Dockerfile`、`trust-policy.json`、旧 `tests/test_*.py`）削除
+- [x] README.md を v2 構成に全面刷新
+- [x] `docs/architecture.drawio` を追加
 
 ### 残存（共有・温存）
 - S3 バケット（画像保存・登録顔元）
 - Rekognition コレクション `mosaic-app-faces`（登録顔データ）
 - SSM Parameter Store の `/mosaic-app/line-channel-*`
-
-## 既存課題（Phase 2 と並行・後追い可）
-- [ ] GitHub Actions の AWS_ROLE_ARN secret 設定（OIDC連携用 IAM Role 含む）。現状CI/CDが一度も発火していない
-- [ ] Secret Scanning（Push Protection）の有効化確認
-- [ ] AWS リソース（S3バケット名・Rekognition コレクションID）の控えを ~/.secrets/ に保存
 
 ## 完了済（Phase 1相当・2026-05-07 セッション）
 - [x] mosaic-app の現状調査（Lambda・ECR・API Gatewayの構成把握）
