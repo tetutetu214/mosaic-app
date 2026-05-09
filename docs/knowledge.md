@@ -97,6 +97,11 @@ plan.md 初稿（2026-05-07）では IaC を AWS SAM としていたが、本日
 - **Lambda 更新中の動作**: 新旧が並存して徐々に切替（ローリング）。健全なイメージならダウンタイム原則ゼロ
 - **コンテナ Lambda のロールバック**: 直前のイメージ digest を `update-function-code --image-uri` で再指定（タグ削除では戻らない）
 
+### 2026-05-09（Phase 2-C デプロイ直前テスト合格）
+- **CDK スタックが CFn 上に展開する実リソース数の感覚**: コード上 9 コンストラクトでも、CDK が IAM Role/Policy・API Gateway 子リソース（Account/Deployment/Stage/Resource/Method）・Lambda Permission を自動展開するため、実際の CFn リソースは約19個になる。`cdk diff` の Resources セクションで確認できる
+- **並行運用（Blue/Green 相当）方式の安全性**: 新スタックを旧スタックの「横」に作り、LINE Webhook URL の切替で本番化する方式では、既存 Lambda・API Gateway は CDK 管轄外で触られない。S3・Rekognition データも維持される。ロールバックは Webhook URL を戻すだけで完了
+- **ロールバック手順の優先順位**: 並行運用ならまず「Webhook URL を旧に戻す」が最安全・最速。`cdk destroy` は重く、SSM 削除や Lambda 無効化は副作用が大きい。リカバリー後は再切替で復活可能なので、新スタックを温存しておく
+
 ### 2026-05-09（Phase 2-A spec.md 完成・実装着手前テスト合格）
 - **SQS visibility_timeout を関数 timeout の6倍に設定する理由**: 受信中の Lambda が処理中に他の Lambda が同じメッセージを取って二重実行するのを防ぐため。SQS は at-least-once delivery で、visibility timeout が短すぎると同一メッセージが複数 Lambda に再配送される
 - **reply token を SQS に乗せない理由**: reply token は受信から1分しか有効でない。SQS で非同期化すると processor が取り出した時点で期限切れの可能性があるため、Push API に統一する
