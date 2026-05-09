@@ -15,15 +15,15 @@
 - [x] てつてつによる章ごとレビュー
 - [x] 実装着手前の理解度テスト（CLAUDE.md ハーネス規約）— 2026-05-09 全問正解
 
-## Phase 2-B: 実装
-- [ ] AWS CDK のローカル環境確認（`cdk --version` / Python venv）
-- [ ] CDK プロジェクト雛形作成（`cdk/` 配下に app.py / stacks / cdk.json / requirements.txt）
-- [ ] handler Lambda コード（webhook受信専用）の実装
-- [ ] processor Lambda コード（画像処理専用）の実装
-- [ ] shared/ ディレクトリの共通ユーティリティ実装
-- [ ] テストコード追加（handler / processor / shared 個別）
-- [ ] `cdk synth` で CFn テンプレートを生成して内容確認
-- [ ] `cdk diff` で既存スタックとの差分確認
+## Phase 2-B: 実装（完了 2026-05-09）
+- [x] AWS CDK のローカル環境確認（`cdk --version` 2.1121.0 / venv 構築）
+- [x] shared/ 共通ユーティリティ実装 + テスト 11件
+- [x] handler Lambda 実装 + テスト 10件
+- [x] processor Lambda 実装（既存ロジック移植）+ テスト 9件
+- [x] CDK プロジェクト雛形作成（cdk/app.py、stacks/mosaic_stack.py、cdk.json、requirements.txt）
+- [x] CDK スナップショットテスト 9件
+- [x] `cdk synth` で CFn テンプレート生成を確認（エラーなし）
+- [ ] `cdk diff` で既存スタックとの差分確認（Phase 2-C デプロイ前に実施）
 
 ## Phase 2-C: デプロイ・検証
 - [ ] `cdk bootstrap` 実行確認（同アカウント・同リージョンで未実施なら）
